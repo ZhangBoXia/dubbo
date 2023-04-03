@@ -56,7 +56,7 @@ public class Application {
         GenericService genericService = (GenericService) demoService;
         Object genericInvokeResult = genericService.$invoke("sayHello", new String[] { String.class.getName() },
                 new Object[] { "dubbo generic invoke" });
-        System.out.println(genericInvokeResult);
+        System.out.println("消费者输出"+genericInvokeResult);
     }
 
     private static void runWithRefer() {
@@ -66,6 +66,6 @@ public class Application {
         reference.setInterface(DemoService.class);
         DemoService service = reference.get();
         String message = service.sayHello("dubbo");
-        System.out.println(message);
+        System.out.println("消费者输出"+message);
     }
 }

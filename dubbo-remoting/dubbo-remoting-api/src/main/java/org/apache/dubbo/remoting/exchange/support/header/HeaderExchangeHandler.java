@@ -76,6 +76,7 @@ public class HeaderExchangeHandler implements ChannelHandlerDelegate {
     }
 
     void handleRequest(final ExchangeChannel channel, Request req) throws RemotingException {
+        // 先通过请求Id构造一个响应实体。
         Response res = new Response(req.getId(), req.getVersion());
         if (req.isBroken()) {
             Object data = req.getData();
@@ -95,8 +96,10 @@ public class HeaderExchangeHandler implements ChannelHandlerDelegate {
             return;
         }
         // find handler by message class.
+        // 获取请求信息，应该是消息体信息（不确定）
         Object msg = req.getData();
         try {
+            // 最终调用DubboProtocol的reply方法，ExchangeHandlerAdapter匿名内部类
             CompletionStage<Object> future = handler.reply(channel, msg);
             future.whenComplete((appResult, t) -> {
                 try {

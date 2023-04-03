@@ -159,6 +159,7 @@ public class ExtensionLoader<T> {
 
     @SuppressWarnings("unchecked")
     public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
+        // 过滤掉为空、不是接口、没有@SPI注解的类
         if (type == null) {
             throw new IllegalArgumentException("Extension type == null");
         }
@@ -169,10 +170,12 @@ public class ExtensionLoader<T> {
             throw new IllegalArgumentException("Extension type (" + type +
                     ") is not an extension, because it is NOT annotated with @" + SPI.class.getSimpleName() + "!");
         }
-
+        // 先从缓存中获取
         ExtensionLoader<T> loader = (ExtensionLoader<T>) EXTENSION_LOADERS.get(type);
         if (loader == null) {
+            // 如果不存在就put
             EXTENSION_LOADERS.putIfAbsent(type, new ExtensionLoader<T>(type));
+            // 再次从缓存中获取
             loader = (ExtensionLoader<T>) EXTENSION_LOADERS.get(type);
         }
         return loader;
@@ -652,39 +655,49 @@ public class ExtensionLoader<T> {
 
     @SuppressWarnings("unchecked")
     private T createExtension(String name, boolean wrap) {
+        // getExtensionClasses 从配置文件中加载所有的扩展类, 维护 配置项名称->配置类类型 的映射
         Class<?> clazz = getExtensionClasses().get(name);
         if (clazz == null || unacceptableExceptions.contains(name)) {
             throw findException(name);
         }
         try {
+            // EXTENSION_INSTANCES 中维护了从 类型->ExtensionLoader 的映射
             T instance = (T) EXTENSION_INSTANCES.get(clazz);
             if (instance == null) {
                 EXTENSION_INSTANCES.putIfAbsent(clazz, clazz.getDeclaredConstructor().newInstance());
                 instance = (T) EXTENSION_INSTANCES.get(clazz);
             }
+            // 向扩展对象中注入依赖, Dubbo IOC 的体现
             injectExtension(instance);
 
-
+            // Dubbo AOP 的体现
+            // 如果是 Wapper类就将扩展对象包裹在相应的 Wapper 对象中。
+            // 比如我基于 Protocol 定义了 DubboProtocol 的扩展，但实际上在 Dubbo 中不是直接使用的 DubboProtocol,
+            // 而是其包装类ProtocolListenerWrapper
             if (wrap) {
 
                 List<Class<?>> wrapperClassesList = new ArrayList<>();
+                // loadExtensionClasses 调用之后会缓存 cachedWrapperClasses。 cachedWrapperClasses 是一个 类型set
                 if (cachedWrapperClasses != null) {
                     wrapperClassesList.addAll(cachedWrapperClasses);
                     wrapperClassesList.sort(WrapperComparator.COMPARATOR);
                     Collections.reverse(wrapperClassesList);
                 }
 
+                // 循环创建 Wrapper 实例
                 if (CollectionUtils.isNotEmpty(wrapperClassesList)) {
                     for (Class<?> wrapperClass : wrapperClassesList) {
                         Wrapper wrapper = wrapperClass.getAnnotation(Wrapper.class);
                         if (wrapper == null
                                 || (ArrayUtils.contains(wrapper.matches(), name) && !ArrayUtils.contains(wrapper.mismatches(), name))) {
+                            // 将当前 instance 作为参数传给 Wrapper 的构造方法，并通过反射创建 Wrapper 实例。
+                            // 然后向 Wrapper 实例中注入依赖，最后将 Wrapper 实例再次赋值给 instance 变量
                             instance = injectExtension((T) wrapperClass.getConstructor(type).newInstance(instance));
                         }
                     }
                 }
             }
-
+            // 初始化扩展类对象
             initExtension(instance);
             return instance;
         } catch (Throwable t) {
@@ -704,6 +717,7 @@ public class ExtensionLoader<T> {
         }
 
         try {
+            // 遍历类中的所有方法, 筛选出 setter方法. setter 的特征: set开头, 一个入参, public 修饰.
             for (Method method : instance.getClass().getMethods()) {
                 if (!isSetter(method)) {
                     continue;
@@ -711,11 +725,13 @@ public class ExtensionLoader<T> {
 
                 /*
                  * Check {@link DisableInject} to see if we need autowire injection for this property
+                 * setter 方法上添加 @DisableInject 注解禁用 Dubbo 注入
                  */
                 if (method.getAnnotation(DisableInject.class) != null) {
                     continue;
                 }
 
+                // 获取第一个参数,判断是否是原始类型及其包装类
                 Class<?> pt = method.getParameterTypes()[0];
                 if (ReflectUtils.isPrimitives(pt)) {
                     continue;
@@ -726,6 +742,7 @@ public class ExtensionLoader<T> {
                  * {@link Inject#enable} == false will skip inject property phase
                  * {@link Inject#InjectType#ByName} default inject by name
                  */
+                // 获取属性名，比如 setName 方法对应属性名 name
                 String property = getSetterProperty(method);
                 Inject inject = method.getAnnotation(Inject.class);
                 if (inject == null) {
@@ -750,6 +767,7 @@ public class ExtensionLoader<T> {
 
     private void injectValue(T instance, Method method, Class<?> pt, String property) {
         try {
+            // 从 ObjectFactory 中获取依赖对象
             Object object = objectFactory.getExtension(pt, property);
             if (object != null) {
                 method.invoke(instance, object);

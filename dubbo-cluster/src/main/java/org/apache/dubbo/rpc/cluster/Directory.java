@@ -35,18 +35,19 @@ public interface Directory<T> extends Node {
 
     /**
      * get service type.
-     *
+     * 获取服务的类型,也就是我们demo中所使用的HelloService
      * @return service type.
      */
     Class<T> getInterface();
 
     /**
      * list invokers.
-     *
+     * 根据本次调用的信息来获取所有可以被执行的提供者信息
      * @return invokers
      */
     List<Invoker<T>> list(Invocation invocation) throws RpcException;
 
+    // 获取所有的提供者信息
     List<Invoker<T>> getAllInvokers();
 
     URL getConsumerUrl();
